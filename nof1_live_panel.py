@@ -1,5 +1,5 @@
 """
-Streamlit live panel for NoF1.ai trading competition
+Streamlit live panel for NoF1.ai trading competition (fixed version)
 
 This app pulls data from the NoF1.ai `/api/trades` endpoint, calculates key
 performance metrics for the supported models and displays the results in a
@@ -13,7 +13,6 @@ shareable URL.
 """
 
 import json
-import os
 import time
 from typing import Dict, Iterable, List
 
@@ -35,11 +34,7 @@ TRADES_URL = "https://nof1.ai/api/trades"
 
 
 def load_trades() -> List[dict]:
-    """Fetch the latest trades from NoF1.ai.
-
-    Returns a list of trade dictionaries.  If the endpoint
-    cannot be reached, an empty list is returned.
-    """
+    """Fetch the latest trades from NoF1.ai and return a list of trade records."""
     try:
         response = requests.get(TRADES_URL, timeout=10)
         response.raise_for_status()
@@ -111,7 +106,6 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
             "Initial capital ($)": initial_capital,
         })
     df = pd.DataFrame(rows)
-    # Convert infinite and NaN values to friendly strings
     df = df.replace([float("inf"), float("nan")], ["∞", "N/A"])
     return df
 
@@ -120,9 +114,6 @@ def main():
     st.title("NoF1.ai Live Model Performance Panel")
     st.write("This dashboard reads completed trades from the NoF1.ai API and updates every minute.")
 
-    # Auto-refresh every 60 seconds
-    st_autorefresh = st.experimental_rerun  # alias to avoid name shadowing
-    count = st.experimental_get_query_params().get('count', [0])[0]
     # Display the last refresh time
     st.write(f"Last refresh: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
 
@@ -133,9 +124,7 @@ def main():
     else:
         st.write("No data available.")
 
-    # Use st.experimental_rerun for refresh; schedule after delay via meta tag
-    # Streamlit Cloud automatically refreshes on rerun; for local run this triggers a rerun after 60 s.
-    # The JS below reloads after 60 seconds for shareable link.
+    # Add a meta tag to refresh the page every 60 seconds
     st.markdown("""
     <meta http-equiv="refresh" content="60">
     """, unsafe_allow_html=True)
