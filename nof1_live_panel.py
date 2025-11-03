@@ -1,15 +1,14 @@
+# nof1_live_panel.py
+
 """
-Streamlit live panel for NoF1.ai trading competition (fixed version)
+Streamlit live panel for NoF1.ai trading competition (beautified)
 
-This app pulls data from the NoF1.ai `/api/trades` endpoint, calculates key
-performance metrics for the supported models and displays the results in a
-refreshing dashboard.  The page automatically refreshes every minute to
-keep the data up to date.
-
-To deploy this app online so others can view it, sign up for a free
-Streamlit Community Cloud account (https://streamlit.io/cloud), create a new
-app and point it at this script.  The hosted app will provide a
-shareable URL.
+Enhancements:
+- Themed header with emoji/icon
+- Summary KPI chips
+- Styled tables with striped rows, compact fonts, and hover effects
+- Model badges with consistent colors
+- Transposed metrics output for readability
 """
 
 import json
@@ -54,19 +53,22 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         total = len(model_trades)
         long_count = sum(1 for tr in model_trades if tr.get("side") == "long")
         short_count = sum(1 for tr in model_trades if tr.get("side") == "short")
-        # ratio
+
+        # Long/Short ratio
         if short_count > 0:
             ratio = long_count / short_count
         elif long_count > 0:
             ratio = float("inf")
         else:
             ratio = float("nan")
-        # profit and loss
+
+        # Profit and loss
         profits = [tr for tr in model_trades if tr.get("realized_net_pnl", 0) > 0]
         losses = [tr for tr in model_trades if tr.get("realized_net_pnl", 0) < 0]
         max_loss = min((tr.get("realized_net_pnl", 0) for tr in model_trades), default=0.0)
         max_profit = max((tr.get("realized_net_pnl", 0) for tr in model_trades), default=0.0)
-        # max loss/traded amount
+
+        # Max loss / traded amount
         loss_ratios = []
         for tr in model_trades:
             notional = abs(tr.get("entry_sz", 0) * tr.get("entry_price", 0))
@@ -74,19 +76,31 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
             if notional > 0 and pnl < 0:
                 loss_ratios.append(abs(pnl) / notional)
         max_loss_ratio = max(loss_ratios) if loss_ratios else float("nan")
+
         hit_rate = (len(profits) / total * 100) if total > 0 else float("nan")
-        # average holding time
-        hold_times = [(tr.get("exit_time") - tr.get("entry_time")) / 60.0
-                      for tr in model_trades
-                      if tr.get("exit_time") is not None and tr.get("entry_time") is not None]
+
+        # Average holding time (minutes)
+        hold_times = [
+            (tr.get("exit_time") - tr.get("entry_time")) / 60.0
+            for tr in model_trades
+            if tr.get("exit_time") is not None and tr.get("entry_time") is not None
+        ]
         avg_hold = sum(hold_times) / len(hold_times) if hold_times else float("nan")
-        # max notional
+
+        # Max notional
         notionals = [abs(tr.get("entry_sz", 0) * tr.get("entry_price", 0)) for tr in model_trades]
         max_notional = max(notionals) if notionals else float("nan")
-        # leverage
-        leverages = [tr.get("leverage", float("nan")) for tr in model_trades]
-        max_leverage = max(leverages) if leverages else float("nan")
-        avg_leverage = sum(leverages) / len(leverages) if leverages else float("nan")
+
+        # Leverage (filter NaNs)
+        leverages_raw = [tr.get("leverage") for tr in model_trades]
+        leverages = [lv for lv in leverages_raw if isinstance(lv, (int, float)) and not pd.isna(lv)]
+        if leverages:
+            max_leverage = max(leverages)
+            avg_leverage = sum(leverages) / len(leverages)
+        else:
+            max_leverage = float("nan")
+            avg_leverage = float("nan")
+
         rows.append({
             "AI Model": name,
             "Total orders": total,
@@ -100,33 +114,134 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
             "Max profit ($)": max_profit,
             "Hit rate (%)": hit_rate,
             "Average Holding time (min)": avg_hold,
-            "Max notional value per position ($)": max_notional,
+            "Max entry notional ($)": max_notional,
             "Max leverage": max_leverage,
             "Average leverage": avg_leverage,
             "Initial capital ($)": initial_capital,
         })
+
     df = pd.DataFrame(rows)
+
+    # Replace inf/nan for display
     df = df.replace([float("inf"), float("nan")], ["∞", "N/A"])
-    # Transpose: metrics as rows, models as columns
+
+    # Transpose to show metrics as rows, models as columns
     df = df.set_index("AI Model").T
+    df.index.name = "Metric"
     return df
 
 
+def format_k(number) -> str:
+    """Format large numbers with thousands separator or K/M suffix where useful."""
+    if isinstance(number, (int, float)):
+        try:
+            absn = abs(number)
+            if absn >= 1_000_000:
+                return f"{number/1_000_000:.2f}M"
+            if absn >= 10_000:
+                return f"{number/1_000:.1f}K"
+            return f"{number:,.0f}"
+        except Exception:
+            return str(number)
+    return str(number)
+
+
 def main():
-    st.title("NoF1.ai Live Model Performance Panel")
-    st.write("This dashboard reads completed trades from the NoF1.ai and updates every minute.")
+    # Global page config
+    st.set_page_config(
+        page_title="NoF1.ai Live Model Performance",
+        page_icon="📈",
+        layout="wide",
+    )
 
-    # Display the last refresh time
-    st.write(f"Last refresh: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+    # Theme CSS
+    st.markdown("""
+    <style>
+      /* Global font size and table styling */
+      .stMarkdown, .stDataFrame {font-size: 14px;}
+      .metric-badge {
+        display:inline-block;
+        padding:6px 10px;
+        border-radius:12px;
+        background:#f6f8fa;
+        border:1px solid #e1e4e8;
+        margin-right:8px;
+        margin-bottom:8px;
+        font-size:13px;
+      }
+      .model-pill {
+        display:inline-block;
+        padding:4px 10px;
+        border-radius:999px;
+        color:white;
+        font-size:12px;
+        margin-right:6px;
+        margin-bottom:6px;
+      }
+      /* Color palette per model */
+      .Deepseek { background:#6f42c1; } /* purple */
+      .Qwen3   { background:#0366d6; } /* blue */
+      .Claude  { background:#d73a49; } /* red */
+      .Grok4   { background:#2da44e; } /* green */
+      .Gemini  { background:#ff7b72; } /* coral */
+      .GPT5    { background:#8250df; } /* violet */
 
+      /* DataFrame tweaks */
+      .stDataFrame table {
+        border-collapse: separate !important;
+        border-spacing: 0;
+      }
+      .stDataFrame table tbody tr:nth-child(odd) { background-color: #fafbfc; }
+      .stDataFrame table tbody tr:hover { background-color: #eef3f8; }
+      .stDataFrame table th, .stDataFrame table td {
+        padding: 8px 12px !important;
+      }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Header
+    st.markdown("## 📊 NoF1.ai Live Model Performance Panel")
+    st.markdown("Analyze closed trades per model from the NoF1.ai competition. Auto-refreshes every 60s.")
+
+    # Top bar: last refresh + basic KPIs
+    last_refresh = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     trades = load_trades()
+
+    col_info = st.columns([2, 1, 1, 1])
+    with col_info[0]:
+        st.markdown(f"<span class='metric-badge'>🕒 Last refresh: {last_refresh}</span>", unsafe_allow_html=True)
+        st.markdown(f"<span class='metric-badge'>🔗 Source: {TRADES_URL}</span>", unsafe_allow_html=True)
+    total_trades = len(trades)
+    by_model = pd.Series([tr.get("model_id") for tr in trades]).value_counts() if trades else pd.Series(dtype=int)
+    with col_info[1]:
+        st.markdown(f"<span class='metric-badge'>📦 Total trades: {format_k(total_trades)}</span>", unsafe_allow_html=True)
+    with col_info[2]:
+        st.markdown(f"<span class='metric-badge'>🤖 Models seen: {len(by_model)}</span>", unsafe_allow_html=True)
+    with col_info[3]:
+        top_model = by_model.idxmax() if len(by_model) else "N/A"
+        st.markdown(f"<span class='metric-badge'>🏆 Most active: {top_model}</span>", unsafe_allow_html=True)
+
+    # Model badges
+    st.markdown("#### Models")
+    pills = []
+    for name, _mid in MODEL_MAP.items():
+        pills.append(f"<span class='model-pill {name}'>{name}</span>")
+    st.markdown(" ".join(pills), unsafe_allow_html=True)
+
+    # Data area
     if trades:
         df = compute_metrics(trades)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.write("No data available.")
 
-    # Add a meta tag to refresh the page every 60 seconds
+        # Optional: highlight key metrics rows using st.dataframe's column config
+        st.markdown("#### Metrics (rows) × Models (columns)")
+        st.dataframe(
+            df,
+            use_container_width=True,
+        )
+    else:
+        st.info("No data available right now. The panel will refresh automatically.")
+
+    # Auto-refresh every 60 seconds
     st.markdown("""
     <meta http-equiv="refresh" content="60">
     """, unsafe_allow_html=True)
