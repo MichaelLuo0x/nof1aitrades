@@ -107,12 +107,14 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         })
     df = pd.DataFrame(rows)
     df = df.replace([float("inf"), float("nan")], ["∞", "N/A"])
+    # Transpose: metrics as rows, models as columns
+    df = df.set_index("AI Model").T
     return df
 
 
 def main():
     st.title("NoF1.ai Live Model Performance Panel")
-    st.write("This dashboard reads completed trades from the NoF1.ai API and updates every minute.")
+    st.write("This dashboard reads completed trades from the NoF1.ai and updates every minute.")
 
     # Display the last refresh time
     st.write(f"Last refresh: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
