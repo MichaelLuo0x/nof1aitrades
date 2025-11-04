@@ -5,10 +5,8 @@ Streamlit live panel for NoF1.ai trading competition
 - Fetches trades from NoF1.ai
 - Computes per-model metrics
 - Transposes output: metrics as rows, models as columns
-- Colored column headers per model (clean, aligned)
+- Colored column headers per model (using your current specified colors/comments)
 - KPI badges and auto-refresh
-
-Safe, readable, and ready to run.
 """
 
 import time
@@ -205,7 +203,7 @@ def main():
         layout="wide",
     )
 
-    # CSS theme and palette (clean, aligned headers)
+    # CSS theme and palette (using your current specified colors/comments)
     st.markdown("""
     <style>
       .metric-badge {
@@ -254,6 +252,7 @@ def main():
         font-weight: 700;
         white-space: nowrap;
       }
+      /* Your current specified colors/comments */
       .model-header.Deepseek { background:#6f42c1; } /* blue */
       .model-header.Qwen3   { background:#0366d6; } /* purple */
       .model-header.Claude  { background:#d73a49; } /* orange */
