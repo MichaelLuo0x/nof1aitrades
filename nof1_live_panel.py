@@ -253,12 +253,12 @@ def main():
         white-space: nowrap;
       }
       /* Your current specified colors/comments */
-      .model-header.Deepseek { background:#6f42c1 !important; } /* blue */
-      .model-header.Qwen3   { background:#0366d6 !important; } /* purple */
-      .model-header.Claude  { background:#d73a49 !important; } /* orange */
-      .model-header.Grok4   { background:#2da44e !important; } /* black */
-      .model-header.Gemini  { background:#ff7b72 !important; } /* azure */
-      .model-header.GPT5    { background:#8250df !important; } /* green */
+      .model-header.Deepseek { background: #0000FF !important; } /* blue */
+      .model-header.Qwen3   { background: #800080 !important; } /* purple */
+      .model-header.Claude  { background: #FFA500 !important; } /* orange */
+      .model-header.Grok4   { background: #000000 !important; } /* black */
+      .model-header.Gemini  { background: #007FFF !important; } /* azure */
+      .model-header.GPT5    { background: #008000 !important; } /* green */
     </style>
     """, unsafe_allow_html=True)
 
