@@ -1,15 +1,14 @@
 # nof1_live_panel.py
 
 """
-Streamlit live panel for NoF1.ai trading competition (beautified + colored headers)
-
-Features:
-- Pulls trades from NoF1.ai API
+Streamlit live panel for NoF1.ai trading competition
+- Fetches trades from NoF1.ai
 - Computes per-model metrics
-- Transposes output: metrics are rows, models are columns
-- Colored column headers using CSS palette (Deepseek, Qwen3, Claude, Grok4, Gemini, GPT5)
-- KPI badges and wide layout
-- Auto-refresh every 60 seconds
+- Transposes output: metrics as rows, models as columns
+- Colored column headers per model (clean, aligned)
+- KPI badges and auto-refresh
+
+Safe, readable, and ready to run.
 """
 
 import time
@@ -165,27 +164,28 @@ def model_css_class(col_name: str) -> str:
 def render_colored_header_table(df: pd.DataFrame) -> None:
     """
     Render df (metrics rows × model columns) as HTML with colored column headers.
+    Uses colored header cells (not badges) for perfect alignment.
     """
     # Header
-    header_cells = ["<th style='text-align:left;'>Metric</th>"]
+    header_cells = ["<th class='metric-header'>Metric</th>"]
     for col in df.columns:
         cls = model_css_class(col)
         header_cells.append(
-            f"<th class='model-pill {cls}' style='text-align:center; font-weight:600;'>{col}</th>"
+            f"<th class='model-header {cls}'>{col}</th>"
         )
     header_html = "<tr>" + "".join(header_cells) + "</tr>"
 
     # Body
     body_rows = []
     for metric, row in df.iterrows():
-        cells = [f"<td style='font-weight:500;'>{metric}</td>"]
+        cells = [f"<td class='metric-cell'>{metric}</td>"]
         for col in df.columns:
             val = row[col]
-            cells.append(f"<td style='text-align:center;'>{val}</td>")
+            cells.append(f"<td class='value-cell'>{val}</td>")
         body_rows.append("<tr>" + "".join(cells) + "</tr>")
 
     table_html = f"""
-    <table style="width:100%; border-collapse:separate; border-spacing:0;">
+    <table class="perf-table">
       <thead>
         {header_html}
       </thead>
@@ -205,7 +205,7 @@ def main():
         layout="wide",
     )
 
-    # CSS theme and palette
+    # CSS theme and palette (clean, aligned headers)
     st.markdown("""
     <style>
       .metric-badge {
@@ -218,27 +218,48 @@ def main():
         margin-bottom:8px;
         font-size:13px;
       }
-      .model-pill {
-        display:inline-block;
-        padding:8px 12px;
-        border-radius:999px;
-        color:#fff;
-        font-size:13px;
-        margin-right:6px;
-        margin-bottom:6px;
-      }
-      /* Color palette per model */
-      .Deepseek { background:#6f42c1; } /* purple */
-      .Qwen3   { background:#0366d6; } /* blue */
-      .Claude  { background:#d73a49; } /* red */
-      .Grok4   { background:#2da44e; } /* green */
-      .Gemini  { background:#ff7b72; } /* coral */
-      .GPT5    { background:#8250df; } /* violet */
 
-      /* Table niceties */
-      table tbody tr:nth-child(odd) { background-color: #fafbfc; }
-      table tbody tr:hover { background-color: #eef3f8; }
-      table th, table td { padding: 8px 12px; }
+      /* Table base */
+      .perf-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+      .perf-table thead th, .perf-table tbody td {
+        padding: 8px 12px;
+      }
+      .perf-table tbody tr:nth-child(odd) { background-color: #fafbfc; }
+      .perf-table tbody tr:hover { background-color: #eef3f8; }
+
+      /* Metric column */
+      .metric-header {
+        text-align: left;
+        background: #111827;
+        color: #fff;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .metric-cell {
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .value-cell {
+        text-align: center;
+      }
+
+      /* Colored model header cells (ensures alignment) */
+      .model-header {
+        color: #fff;
+        text-align: center;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .model-header.Deepseek { background:#6f42c1; } /* purple */
+      .model-header.Qwen3   { background:#0366d6; } /* blue */
+      .model-header.Claude  { background:#d73a49; } /* red */
+      .model-header.Grok4   { background:#2da44e; } /* green */
+      .model-header.Gemini  { background:#ff7b72; } /* coral */
+      .model-header.GPT5    { background:#8250df; } /* violet */
     </style>
     """, unsafe_allow_html=True)
 
