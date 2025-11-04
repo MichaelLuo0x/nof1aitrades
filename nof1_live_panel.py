@@ -1,17 +1,17 @@
 # nof1_live_panel.py
 
 """
-Streamlit live panel for NoF1.ai trading competition (beautified)
+Streamlit live panel for NoF1.ai trading competition (beautified + colored headers)
 
-Enhancements:
-- Themed header with emoji/icon
-- Summary KPI chips
-- Styled tables with striped rows, compact fonts, and hover effects
-- Model badges with consistent colors
-- Transposed metrics output for readability
+Features:
+- Pulls trades from NoF1.ai API
+- Computes per-model metrics
+- Transposes output: metrics are rows, models are columns
+- Colored column headers using CSS palette (Deepseek, Qwen3, Claude, Grok4, Gemini, GPT5)
+- KPI badges and wide layout
+- Auto-refresh every 60 seconds
 """
 
-import json
 import time
 from typing import Dict, Iterable, List
 
@@ -19,7 +19,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# Mapping of user‑friendly names to the model identifiers in the API
+# Friendly names -> model_id mapping
 MODEL_MAP: Dict[str, str] = {
     "Deepseek": "deepseek-chat-v3.1",
     "Qwen3": "qwen3-max",
@@ -45,11 +45,16 @@ def load_trades() -> List[dict]:
 
 
 def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) -> pd.DataFrame:
-    """Compute performance metrics per model from raw trade records."""
+    """
+    Compute per-model metrics.
+    Returns a transposed DataFrame with metrics as rows and models as columns.
+    """
     rows = []
     trades_list = list(trades)
+
     for name, model_id in MODEL_MAP.items():
         model_trades = [tr for tr in trades_list if tr.get("model_id") == model_id]
+
         total = len(model_trades)
         long_count = sum(1 for tr in model_trades if tr.get("side") == "long")
         short_count = sum(1 for tr in model_trades if tr.get("side") == "short")
@@ -62,13 +67,13 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         else:
             ratio = float("nan")
 
-        # Profit and loss
+        # Profit and loss counts and extrema (use realized_net_pnl)
         profits = [tr for tr in model_trades if tr.get("realized_net_pnl", 0) > 0]
         losses = [tr for tr in model_trades if tr.get("realized_net_pnl", 0) < 0]
         max_loss = min((tr.get("realized_net_pnl", 0) for tr in model_trades), default=0.0)
         max_profit = max((tr.get("realized_net_pnl", 0) for tr in model_trades), default=0.0)
 
-        # Max loss / traded amount
+        # Max loss / traded amount (severity)
         loss_ratios = []
         for tr in model_trades:
             notional = abs(tr.get("entry_sz", 0) * tr.get("entry_price", 0))
@@ -77,6 +82,7 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
                 loss_ratios.append(abs(pnl) / notional)
         max_loss_ratio = max(loss_ratios) if loss_ratios else float("nan")
 
+        # Hit rate
         hit_rate = (len(profits) / total * 100) if total > 0 else float("nan")
 
         # Average holding time (minutes)
@@ -87,11 +93,11 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         ]
         avg_hold = sum(hold_times) / len(hold_times) if hold_times else float("nan")
 
-        # Max notional
+        # Max entry notional
         notionals = [abs(tr.get("entry_sz", 0) * tr.get("entry_price", 0)) for tr in model_trades]
         max_notional = max(notionals) if notionals else float("nan")
 
-        # Leverage (filter NaNs)
+        # Leverage (filter None/NaN)
         leverages_raw = [tr.get("leverage") for tr in model_trades]
         leverages = [lv for lv in leverages_raw if isinstance(lv, (int, float)) and not pd.isna(lv)]
         if leverages:
@@ -121,68 +127,16 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         })
 
     df = pd.DataFrame(rows)
-
     # Replace inf/nan for display
     df = df.replace([float("inf"), float("nan")], ["∞", "N/A"])
-
-    # Transpose to show metrics as rows, models as columns
+    # Transpose: metrics as rows, models as columns
     df = df.set_index("AI Model").T
     df.index.name = "Metric"
     return df
 
-# ---- after df = compute_metrics(trades) ----
-
-# df has metrics as rows and models as columns (df.index = "Metric")
-# Build a styled HTML table with colored column headers
-
-def model_css_class(col_name: str) -> str:
-    # Map DataFrame column to CSS class name exactly as in your palette
-    # These names must match your "AI Model" display names used as columns in df
-    return {
-        "Deepseek": "Deepseek",
-        "Qwen3": "Qwen3",
-        "Claude": "Claude",
-        "Grok4": "Grok4",
-        "Gemini": "Gemini",
-        "GPT5": "GPT5",
-    }.get(col_name, "")
-
-# Create the table header HTML with per-column class
-header_cells = ["<th>Metric</th>"]
-for col in df.columns:
-    cls = model_css_class(col)
-    # Add a class on the header cell; also add a mild style for padding/contrast
-    header_cells.append(
-        f"<th class='model-pill {cls}' style='text-align:center; font-weight:600;'>{col}</th>"
-    )
-header_html = "<tr>" + "".join(header_cells) + "</tr>"
-
-# Build body rows
-body_rows = []
-for metric, row in df.iterrows():
-    cells = [f"<td style='font-weight:500;'>{metric}</td>"]
-    for col in df.columns:
-        val = row[col]
-        cells.append(f"<td style='text-align:center;'>{val}</td>")
-    body_rows.append("<tr>" + "".join(cells) + "</tr>")
-
-table_html = f"""
-<table style="width:100%; border-collapse:separate; border-spacing:0;">
-  <thead>
-    {header_html}
-  </thead>
-  <tbody>
-    {''.join(body_rows)}
-  </tbody>
-</table>
-"""
-
-# Render the HTML table
-st.markdown(table_html, unsafe_allow_html=True)
-
 
 def format_k(number) -> str:
-    """Format large numbers with thousands separator or K/M suffix where useful."""
+    """Format numbers with separators or K/M suffix."""
     if isinstance(number, (int, float)):
         try:
             absn = abs(number)
@@ -196,19 +150,64 @@ def format_k(number) -> str:
     return str(number)
 
 
+def model_css_class(col_name: str) -> str:
+    """Map DataFrame column (friendly model name) to CSS class name."""
+    return {
+        "Deepseek": "Deepseek",
+        "Qwen3": "Qwen3",
+        "Claude": "Claude",
+        "Grok4": "Grok4",
+        "Gemini": "Gemini",
+        "GPT5": "GPT5",
+    }.get(col_name, "")
+
+
+def render_colored_header_table(df: pd.DataFrame) -> None:
+    """
+    Render df (metrics rows × model columns) as HTML with colored column headers.
+    """
+    # Header
+    header_cells = ["<th style='text-align:left;'>Metric</th>"]
+    for col in df.columns:
+        cls = model_css_class(col)
+        header_cells.append(
+            f"<th class='model-pill {cls}' style='text-align:center; font-weight:600;'>{col}</th>"
+        )
+    header_html = "<tr>" + "".join(header_cells) + "</tr>"
+
+    # Body
+    body_rows = []
+    for metric, row in df.iterrows():
+        cells = [f"<td style='font-weight:500;'>{metric}</td>"]
+        for col in df.columns:
+            val = row[col]
+            cells.append(f"<td style='text-align:center;'>{val}</td>")
+        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+
+    table_html = f"""
+    <table style="width:100%; border-collapse:separate; border-spacing:0;">
+      <thead>
+        {header_html}
+      </thead>
+      <tbody>
+        {''.join(body_rows)}
+      </tbody>
+    </table>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
+
+
 def main():
-    # Global page config
+    # Page config
     st.set_page_config(
         page_title="NoF1.ai Live Model Performance",
         page_icon="📈",
         layout="wide",
     )
 
-    # Theme CSS
+    # CSS theme and palette
     st.markdown("""
     <style>
-      /* Global font size and table styling */
-      .stMarkdown, .stDataFrame {font-size: 14px;}
       .metric-badge {
         display:inline-block;
         padding:6px 10px;
@@ -221,10 +220,10 @@ def main():
       }
       .model-pill {
         display:inline-block;
-        padding:4px 10px;
+        padding:8px 12px;
         border-radius:999px;
-        color:white;
-        font-size:12px;
+        color:#fff;
+        font-size:13px;
         margin-right:6px;
         margin-bottom:6px;
       }
@@ -236,30 +235,25 @@ def main():
       .Gemini  { background:#ff7b72; } /* coral */
       .GPT5    { background:#8250df; } /* violet */
 
-      /* DataFrame tweaks */
-      .stDataFrame table {
-        border-collapse: separate !important;
-        border-spacing: 0;
-      }
-      .stDataFrame table tbody tr:nth-child(odd) { background-color: #fafbfc; }
-      .stDataFrame table tbody tr:hover { background-color: #eef3f8; }
-      .stDataFrame table th, .stDataFrame table td {
-        padding: 8px 12px !important;
-      }
+      /* Table niceties */
+      table tbody tr:nth-child(odd) { background-color: #fafbfc; }
+      table tbody tr:hover { background-color: #eef3f8; }
+      table th, table td { padding: 8px 12px; }
     </style>
     """, unsafe_allow_html=True)
 
     # Header
     st.markdown("## 📊 NoF1.ai Live Model Performance Panel")
-    st.markdown("Analyze closed trades per model from the NoF1.ai competition -- Session 1")
+    st.markdown("Analyze closed trades per model from the NoF1.ai competition. Auto-refreshes every 60s.")
 
-    # Top bar: last refresh + basic KPIs
+    # KPIs
     last_refresh = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     trades = load_trades()
 
     col_info = st.columns([2, 1, 1, 1])
     with col_info[0]:
         st.markdown(f"<span class='metric-badge'>🕒 Last refresh: {last_refresh}</span>", unsafe_allow_html=True)
+
     total_trades = len(trades)
     by_model = pd.Series([tr.get("model_id") for tr in trades]).value_counts() if trades else pd.Series(dtype=int)
     with col_info[1]:
@@ -270,21 +264,11 @@ def main():
         top_model = by_model.idxmax() if len(by_model) else "N/A"
         st.markdown(f"<span class='metric-badge'>🏆 Most active: {top_model}</span>", unsafe_allow_html=True)
 
-    # Model badges
-    st.markdown("#### Models")
-    pills = []
-    for name, _mid in MODEL_MAP.items():
-        pills.append(f"<span class='model-pill {name}'>{name}</span>")
-    st.markdown(" ".join(pills), unsafe_allow_html=True)
-
     # Data area
     if trades:
         df = compute_metrics(trades)
-        st.dataframe(
-            df,
-            use_container_width=True,
-        )
-
+        st.markdown("#### Metrics (rows) × Models (columns)")
+        render_colored_header_table(df)
     else:
         st.info("No data available right now. The panel will refresh automatically.")
 
