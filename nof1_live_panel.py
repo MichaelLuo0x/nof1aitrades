@@ -130,6 +130,56 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
     df.index.name = "Metric"
     return df
 
+# ---- after df = compute_metrics(trades) ----
+
+# df has metrics as rows and models as columns (df.index = "Metric")
+# Build a styled HTML table with colored column headers
+
+def model_css_class(col_name: str) -> str:
+    # Map DataFrame column to CSS class name exactly as in your palette
+    # These names must match your "AI Model" display names used as columns in df
+    return {
+        "Deepseek": "Deepseek",
+        "Qwen3": "Qwen3",
+        "Claude": "Claude",
+        "Grok4": "Grok4",
+        "Gemini": "Gemini",
+        "GPT5": "GPT5",
+    }.get(col_name, "")
+
+# Create the table header HTML with per-column class
+header_cells = ["<th>Metric</th>"]
+for col in df.columns:
+    cls = model_css_class(col)
+    # Add a class on the header cell; also add a mild style for padding/contrast
+    header_cells.append(
+        f"<th class='model-pill {cls}' style='text-align:center; font-weight:600;'>{col}</th>"
+    )
+header_html = "<tr>" + "".join(header_cells) + "</tr>"
+
+# Build body rows
+body_rows = []
+for metric, row in df.iterrows():
+    cells = [f"<td style='font-weight:500;'>{metric}</td>"]
+    for col in df.columns:
+        val = row[col]
+        cells.append(f"<td style='text-align:center;'>{val}</td>")
+    body_rows.append("<tr>" + "".join(cells) + "</tr>")
+
+table_html = f"""
+<table style="width:100%; border-collapse:separate; border-spacing:0;">
+  <thead>
+    {header_html}
+  </thead>
+  <tbody>
+    {''.join(body_rows)}
+  </tbody>
+</table>
+"""
+
+# Render the HTML table
+st.markdown(table_html, unsafe_allow_html=True)
+
 
 def format_k(number) -> str:
     """Format large numbers with thousands separator or K/M suffix where useful."""
