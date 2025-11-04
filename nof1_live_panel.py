@@ -201,7 +201,7 @@ def main():
 
     # Header
     st.markdown("## 📊 NoF1.ai Live Model Performance Panel")
-    st.markdown("Analyze closed trades per model from the NoF1.ai competition. Auto-refreshes every 60s.")
+    st.markdown("Analyze closed trades per model from the NoF1.ai competition -- Session 1")
 
     # Top bar: last refresh + basic KPIs
     last_refresh = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -210,7 +210,6 @@ def main():
     col_info = st.columns([2, 1, 1, 1])
     with col_info[0]:
         st.markdown(f"<span class='metric-badge'>🕒 Last refresh: {last_refresh}</span>", unsafe_allow_html=True)
-        st.markdown(f"<span class='metric-badge'>🔗 Source: {TRADES_URL}</span>", unsafe_allow_html=True)
     total_trades = len(trades)
     by_model = pd.Series([tr.get("model_id") for tr in trades]).value_counts() if trades else pd.Series(dtype=int)
     with col_info[1]:
@@ -232,12 +231,6 @@ def main():
     if trades:
         df = compute_metrics(trades)
 
-        # Optional: highlight key metrics rows using st.dataframe's column config
-        st.markdown("#### Metrics (rows) × Models (columns)")
-        st.dataframe(
-            df,
-            use_container_width=True,
-        )
     else:
         st.info("No data available right now. The panel will refresh automatically.")
 
