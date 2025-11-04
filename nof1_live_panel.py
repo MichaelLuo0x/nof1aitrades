@@ -288,7 +288,6 @@ def main():
     # Data area
     if trades:
         df = compute_metrics(trades)
-        st.markdown("#### Metrics (rows) × Models (columns)")
         render_colored_header_table(df)
     else:
         st.info("No data available right now. The panel will refresh automatically.")
