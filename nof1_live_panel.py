@@ -2,19 +2,20 @@
 
 """
 Streamlit live panel for NoF1.ai trading competition
-- Fetches trades from NoF1.ai
-- Computes per-model metrics (corrected per latest spec)
+- Fetches trades LIVE from https://nof1.ai/api/trades (no local file used)
+- Computes per-model metrics per spec
 - Transposes output: metrics as rows, models as columns
-- Colored column headers per model
-- Responsive HTML table with alternating row shading and a solid divider
-- No auto-refresh.  NOTE: After a new trading season launches, I will enable live tracking again.
+- Colored column headers per model, responsive HTML table, alternating row shading
+- Solid divider between metric groups
+- All numeric values rounded to 4 decimals (∞ / N/A preserved)
+NOTE: After a new trading season launches, I will enable live tracking again.
 """
 
 from typing import Dict, Iterable, List, Tuple, Any
-import pandas as pd
-import requests
-import streamlit as st
 import math
+import requests
+import pandas as pd
+import streamlit as st
 
 # Friendly names -> model_id mapping
 MODEL_MAP: Dict[str, str] = {
@@ -32,16 +33,16 @@ TRADES_URL = "https://nof1.ai/api/trades"
 def load_trades() -> List[dict]:
     """Fetch the latest trades from NoF1.ai and return a list of trade records."""
     try:
-        resp = requests.get(TRADES_URL, timeout=15)
+        resp = requests.get(TRADES_URL, timeout=20)
         resp.raise_for_status()
         payload = resp.json()
         trades = payload.get("trades", [])
-        # Some snapshots wrap each entry like {"trades": {...}} — normalize if needed
+        # Some snapshots wrap each item like {"trades": {...}} — normalize just in case
         if trades and isinstance(trades[0], dict) and "trades" in trades[0]:
             trades = [t["trades"] for t in trades]
         return trades
     except Exception as exc:
-        st.error(f"Could not load data: {exc}")
+        st.error(f"Could not load data from NoF1.ai: {exc}")
         return []
 
 
@@ -49,24 +50,12 @@ def _safe_num(x: Any) -> float:
     return float(x) if isinstance(x, (int, float)) else float("nan")
 
 
-def _round4(x: Any) -> str:
-    """Format numbers to exactly 4 decimals; pass through '∞'/'N/A'."""
-    if isinstance(x, str):
-        return x
-    if isinstance(x, (int, float)):
-        if math.isnan(x):
-            return "N/A"
-        # Keep sign and 4 decimals always
-        return f"{x:.4f}"
-    return str(x)
-
-
 def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) -> Tuple[pd.DataFrame, Dict[str, Dict[str, Any]]]:
     """
     Compute per-model metrics.
     Returns:
-      - DataFrame (metrics as rows, models as columns) with raw numeric values
-      - metrics_by_model: nested dict of metrics (for rendering/formatting)
+      - DataFrame (metrics as rows, models as columns)
+      - metrics_by_model: nested dict of raw metrics
     """
     trades_list = list(trades)
     metrics_by_model: Dict[str, Dict[str, Any]] = {}
@@ -74,8 +63,9 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
     for name, model_id in MODEL_MAP.items():
         model_trades = [tr for tr in trades_list if tr.get("model_id") == model_id]
         total = len(model_trades)
+
+        # Always include columns; if no trades, fill with NaNs/N/A later
         if total == 0:
-            # Still include empty columns with N/A values for visibility
             metrics_by_model[name] = {}
             continue
 
@@ -89,7 +79,7 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         else:
             ratio = "N/A"
 
-        # Realized PnL vectors
+        # PnL vectors
         pnls = [_safe_num(tr.get("realized_net_pnl", 0.0)) for tr in model_trades]
         profits = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p < 0]
@@ -111,15 +101,12 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         if max_loss_trade:
             notional = abs(_safe_num(max_loss_trade.get("entry_sz")) * _safe_num(max_loss_trade.get("entry_price")))
             lev = _safe_num(max_loss_trade.get("leverage"))
-            if math.isnan(lev) or lev <= 0:
-                margin = notional
-            else:
-                margin = notional / lev
+            margin = notional / lev if (not math.isnan(lev) and lev > 0) else notional
             max_loss_ratio = abs(max_loss) / margin if margin else float("nan")
         else:
             max_loss_ratio = float("nan")
 
-        # Holding time in minutes (use numeric timestamps)
+        # Average holding time (minutes) from numeric seconds
         hold_times = []
         for tr in model_trades:
             entry_t = tr.get("entry_time")
@@ -163,7 +150,7 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
             "Initial capital ($)": initial_capital,
         }
 
-    # Build DataFrame in the desired order
+    # Desired order
     top_metrics = [
         "Total orders",
         "Long count",
@@ -188,10 +175,10 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         "Initial capital ($)",
     ]
 
-    # Ensure all models are present, even if no trades
+    # Ensure all models present
     all_models = list(MODEL_MAP.keys())
-    # Construct a 2D dict for DataFrame creation
     rows = top_metrics + bottom_metrics
+
     table: Dict[str, Dict[str, Any]] = {m: {} for m in rows}
     for metric in rows:
         for model in all_models:
@@ -217,31 +204,32 @@ def model_css_class(col_name: str) -> str:
 def render_colored_header_table(df: pd.DataFrame) -> None:
     """
     Render df (metrics rows × model columns) as HTML with color-coded column headers.
-    Includes a solid horizontal divider between top and bottom metric groups.
+    Includes a solid horizontal divider between metric groups.
     Responsive (horizontal scroll) + alternating row shading.
+    All numeric values rendered to exactly 4 decimals (∞/N/A preserved).
     """
     cols = list(df.columns)
-    # Header row
+
+    # Header
     header_cells = ["<th class='metric-header'>Metric</th>"]
     for col in cols:
-        cls = model_css_class(col)
-        header_cells.append(f"<th class='model-header {cls}'>{col}</th>")
+        header_cells.append(f"<th class='model-header {model_css_class(col)}'>{col}</th>")
     header_html = "<tr>" + "".join(header_cells) + "</tr>"
 
-    # Build body with two groups and a divider row
+    # Body
     top_count = 7  # number of top metrics
     body_rows = []
-
     for idx, (metric, row) in enumerate(df.iterrows(), start=1):
-        # Add divider row just before bottom group
+        # Divider row before bottom group
         if idx == top_count + 1:
             body_rows.append(f"<tr><td class='divider' colspan='{len(cols)+1}'></td></tr>")
+        # metric name
         cells = [f"<td class='metric-cell'>{metric}</td>"]
+        # values per model
         for col in cols:
             val = row[col]
-            # Round numerics to 4 decimals, preserve '∞'/'N/A'
             if isinstance(val, str):
-                out = val
+                out = val  # '∞'/'N/A' or ratios that are already strings
             elif isinstance(val, (int, float)):
                 if val == float("inf"):
                     out = "∞"
@@ -266,7 +254,6 @@ def render_colored_header_table(df: pd.DataFrame) -> None:
       </table>
     </div>
     """
-
     st.markdown(table_html, unsafe_allow_html=True)
 
 
@@ -293,7 +280,7 @@ def main():
       /* Solid divider row */
       .divider { border-top: 3px solid #000; height:0; padding:0; }
 
-      /* Colored model header cells */
+      /* Colored model header cells (your palette) */
       .model-header { color:#fff; text-align:center; font-weight:800; white-space:nowrap; }
       .model-header.Deepseek { background:#0366d6 !important; } /* blue */
       .model-header.Qwen3   { background:#6f42c1 !important; } /* purple */
@@ -306,7 +293,7 @@ def main():
 
     trades = load_trades()
     if not trades:
-        st.info("No trade data available.")
+        st.info("No trade data available right now.")
         return
 
     df, _ = compute_metrics(trades)
