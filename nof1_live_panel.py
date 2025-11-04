@@ -230,6 +230,10 @@ def main():
     # Data area
     if trades:
         df = compute_metrics(trades)
+        st.dataframe(
+            df,
+            use_container_width=True,
+        )
 
     else:
         st.info("No data available right now. The panel will refresh automatically.")
