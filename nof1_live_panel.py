@@ -29,6 +29,16 @@ MODEL_MAP: Dict[str, str] = {
 
 TRADES_URL = "https://nof1.ai/api/trades"
 
+# Static leverage assumptions supplied by competition organizers
+STATIC_AVG_LEVERAGE: Dict[str, float] = {
+    "Qwen3": 15.1,
+    "Deepseek": 12.8,
+    "Claude": 12.8,
+    "Grok4": 12.1,
+    "Gemini": 14.4,
+    "GPT5": 16.7,
+}
+
 
 def load_trades() -> List[dict]:
     """Fetch the latest trades from NoF1.ai and return a list of trade records."""
@@ -96,16 +106,6 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         max_profit = max(pnls) if pnls else 0.0
         max_loss = min(pnls) if pnls else 0.0
 
-        # Max loss / traded margin (margin = notional / leverage)
-        max_loss_trade = next((tr for tr in model_trades if _safe_num(tr.get("realized_net_pnl")) == max_loss), None)
-        if max_loss_trade:
-            notional = abs(_safe_num(max_loss_trade.get("entry_sz")) * _safe_num(max_loss_trade.get("entry_price")))
-            lev = _safe_num(max_loss_trade.get("leverage"))
-            margin = notional / lev if (not math.isnan(lev) and lev > 0) else notional
-            max_loss_ratio = abs(max_loss) / margin if margin else float("nan")
-        else:
-            max_loss_ratio = float("nan")
-
         # Average holding time (minutes) from numeric seconds
         hold_times = []
         for tr in model_trades:
@@ -118,12 +118,6 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         # Max entry notional
         notionals = [abs(_safe_num(tr.get("entry_sz")) * _safe_num(tr.get("entry_price"))) for tr in model_trades]
         max_notional = max(notionals) if notionals else float("nan")
-
-        # Leverage stats
-        leverages = [_safe_num(tr.get("leverage")) for tr in model_trades if isinstance(tr.get("leverage"), (int, float))]
-        leverages = [lv for lv in leverages if not math.isnan(lv)]
-        max_leverage = max(leverages) if leverages else float("nan")
-        avg_leverage = (sum(leverages) / len(leverages)) if leverages else float("nan")
 
         # Total commission fees
         total_fees = sum(_safe_num(tr.get("total_commission_dollars", 0.0)) for tr in model_trades)
@@ -141,14 +135,16 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
             "Return on equity (%)": roe,
             "Max profit ($)": max_profit,
             "Max loss ($)": max_loss,
-            "Max loss / traded margin": max_loss_ratio,
             "Average Holding time (min)": avg_hold,
             "Max entry notional ($)": max_notional,
-            "Max leverage": max_leverage,
-            "Average leverage": avg_leverage,
             "Total commission fees ($)": total_fees,
             "Initial capital ($)": initial_capital,
         }
+        metrics_by_model[name]["Average leverage"] = STATIC_AVG_LEVERAGE.get(name, float("nan"))
+
+    for name in MODEL_MAP:
+        metrics_by_model.setdefault(name, {})
+        metrics_by_model[name].setdefault("Average leverage", STATIC_AVG_LEVERAGE.get(name, float("nan")))
 
     # Desired order
     top_metrics = [
@@ -166,10 +162,8 @@ def compute_metrics(trades: Iterable[dict], initial_capital: float = 10000.0) ->
         "Return on equity (%)",
         "Max profit ($)",
         "Max loss ($)",
-        "Max loss / traded margin",
         "Average Holding time (min)",
         "Max entry notional ($)",
-        "Max leverage",
         "Average leverage",
         "Total commission fees ($)",
         "Initial capital ($)",
